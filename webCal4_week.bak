@@ -1,0 +1,415 @@
+<!--#include file="data/webCal4_data.inc"-->
+<%
+' Copyright 1999 Jason Abbott (jabbott@uidaho.edu)
+' Last updated 08/09/1999
+
+dim dayFirst, dayLast, daySelect, dayNames, d, intCol, strColor
+dim arEvents(6,95,2), dayShow, prevFirst, nextFirst, strQuery, intTime
+
+' arEvents is a three dimensional array
+' the first dimension tracks the day of the week
+' the second dimension tracks the time of day
+' the third dimension holds event information
+
+' ---------------------------------------------------------
+' setup values
+' ---------------------------------------------------------
+
+if Request.Form("month") <> "" then
+	daySelect = Request.Form("month") & "/1/" &  Request.Form("year")
+	dayFirst = DateAdd("d", 1 - WeekDay(daySelect), daySelect)
+	dayLast = DateAdd("d", 6, dayFirst)
+elseif Request.QueryString("date") <> "" then
+	daySelect = Request.QueryString("date")
+	dayFirst = DateAdd("d", 1 - WeekDay(daySelect), daySelect)
+	dayLast = DateAdd("d", 6, dayFirst)
+else
+	dayFirst = DateAdd("d", 1 - WeekDay(Date), Date)
+	dayLast = DateAdd("d", 7 - WeekDay(Date), Date)
+end if
+
+prevFirst = DateAdd("d", -7, dayFirst)
+nextFirst = DateAdd("d", 1, dayLast)
+
+if Session(dataName & "Query") <> "" then
+	strQuery = Session(dataName & "Query")
+else
+	strQuery = "event_views LIKE '%,_2%'"
+	Session(dataName & "Query") = strQuery
+end if
+
+
+' ---------------------------------------------------------
+' build an array of event data for selected week
+' ---------------------------------------------------------
+
+strQuery = "SELECT * FROM cal_events E INNER JOIN cal_dates D" _
+	& " ON (E.event_id = D.event_id) " _
+	& " WHERE event_date BETWEEN #" _
+	& dayFirst & " 12:00:00 AM# AND #" & dayLast & " 11:59:59 PM#" _
+	& " AND (" & strQuery & ")" _
+	& " ORDER BY event_date, time_start"
+	
+' put all matching events in an array indexed by day number
+
+%>
+<!--#include file="show_status.inc"-->
+<%
+' &H0001 (hex 1), which is adCmdText, tells the
+' connection object that we're sending a text command,
+' which is speedier
+
+Set rsEvents = db.Execute(strQuery,,&H0001)
+do while not rsEvents.EOF
+
+' Weekday is 1-based rather than 0-based so subtract one for array
+
+	intDay = WeekDay(rsEvents("event_date")) - 1
+	intTime = Hour(rsEvents("time_start")) * 4
+	
+	intMin = Minute(rsEvents("time_start"))
+	
+	if intMin < 7 then
+		intMin = 0
+	elseif intMin < 22 then
+		intMin = 1
+	elseif intMin < 37 then
+		intMin = 2
+	elseif intMin < 52 then
+		intMin = 3
+	else
+		intMin = 4
+	end if
+	
+	intTime = intTime + intMin
+	
+	arEvents(intDay,intTime,0) = "<a href=""webCal4_detail.asp?event_id=" _
+		& rsEvents("event_id") & "&date=" & rsEvents("event_date") _
+		& "&view=week"" " & showStatus(description) & ">" _
+		& rsEvents("event_title") & "</a>" & VbCrLf
+		
+	arEvents(intDay,intTime,1) = DateDiff("n", rsEvents("time_start"), rsEvents("time_end"))/15
+	arEvents(intDay,intTime,2) = rsEvents("event_color")
+	
+	rsEvents.movenext
+loop
+
+rsEvents.Close
+set rsEvents = nothing
+%>
+
+<html>
+<head>
+<script language="javascript"><!--
+//preload images and text for faster operation
+
+if (document.images) {
+// back icon
+	var iconPrev = new Image();
+	iconPrev.src = "images/icon_calprev_grey.gif";
+	var iconPrevOn = new Image();
+	iconPrevOn.src = "images/icon_calprev.gif"
+	statusPrev = "Last week";
+
+// forward icon
+	var iconNext = new Image();
+	iconNext.src = "images/icon_calnext_grey.gif";
+	var iconNextOn = new Image();
+	iconNextOn.src = "images/icon_calnext.gif"
+	statusNext = "Next week";
+
+// login icon	
+	var iconKey = new Image();
+	iconKey.src = "images/icon_key_grey.gif";
+	var iconKeyOn = new Image();
+	iconKeyOn.src = "images/icon_key.gif"
+	statusKey = "Login";
+
+// users icon	
+	var iconUsers = new Image();
+	iconUsers.src = "images/icon_users_grey.gif";
+	var iconUsersOn = new Image();
+	iconUsersOn.src = "images/icon_users.gif"
+	statusUsers = "Manage users";
+	
+// print icon
+	var iconPrint = new Image();
+	iconPrint.src = "images/icon_print_grey.gif";
+	var iconPrintOn = new Image();
+	iconPrintOn.src = "images/icon_print.gif"
+	statusPrint = "Make printable";
+	
+// search icon
+	var iconSearch = new Image();
+	iconSearch.src = "images/icon_search_grey.gif";
+	var iconSearchOn = new Image();
+	iconSearchOn.src = "images/icon_search.gif"
+	statusSearch = "Find a scheduled event";
+	
+// goto icon
+	var iconGoto = new Image();
+	iconGoto.src = "images/icon_goto_grey.gif";
+	var iconGotoOn = new Image();
+	iconGotoOn.src = "images/icon_goto.gif"
+	statusGoto = "Goto the first week of the selected month";
+}
+
+function iconOver(name){
+	if (document.images) {
+  		document.images[name].src=eval("icon"+name+"On.src");
+		status=eval("status"+name);
+	}
+}
+
+function iconOut(name){
+	if (document.images) {
+  		document.images[name].src=eval("icon"+name+".src");
+		status="";
+	}
+}
+//-->
+</script>
+<!--#include file="webCal4_themes.inc"-->
+</head>
+<body bgcolor="#<%=arColor(1)%>" link="#<%=arColor(7)%>" vlink="#<%=arColor(7)%>" alink="#<%=arColor(6)%>">
+
+<!-- display query while debugging -->
+<font face="Tahoma" size=1><%=strQuery%><p></font>
+
+<!-- heading table -->
+
+<table width="100%" border=0 cellspacing=0 cellpadding=1>
+<tr>
+	<td>
+	<font face="Verdana, Arial, Helvatica" size=5 color="#<%=arColor(4)%>">
+	<b><nobr>Week View</nobr></b></font>
+	</td>
+<form method="post" action="webCal4_week.asp">
+	<td align="right" valign="bottom"><nobr>
+
+		<a href="webCal4_week.asp?date=<%=prevFirst%>"
+		<%=switchIcon("Prev")%>><img name="Prev" src="./images/icon_calprev_grey.gif" width=15 height=16 alt="" border=0></a>
+		&nbsp;
+		<a href="webCal4_find.asp?view=week"
+		<%=switchIcon("Search")%>><img name="Search" src="./images/icon_search_grey.gif"
+		 width=17 height=16 alt="" border=0></a>
+		&nbsp;
+		<a href="webCal4_week.asp?date=<%=nextFirst%>"
+		<%=switchIcon("Next")%>><img name="Next" src="./images/icon_calnext_grey.gif"
+		 width=15 height=16 alt="" border=0></a>
+		&nbsp;
+<%
+if Session(dataName & "User") = "" then
+	response.write "<a href=""webCal4_login.asp?url=" _
+		& Request.ServerVariables("URL") & "?" _
+		& Server.URLEncode(Request.ServerVariables("QUERY_STRING")) & """"
+%>
+		<%=switchIcon("Key")%>><img name="Key" src="./images/icon_key_grey.gif"
+		 width=16 height=15 alt="" border=0></a>
+		&nbsp;
+<% else %>
+		<a href="webCal4_admin.asp?view=week"
+		<%=switchIcon("Users")%>><img name="Users" src="./images/icon_users_grey.gif"
+		 width=12 height=15 alt="" border=0></a>
+		&nbsp;
+<% end if%>
+		<a href="webCal4_print-week.asp?date=<%=dayFirst%>" target="_top"
+		<%=switchIcon("Print")%>><img name="Print" src="./images/icon_print_grey.gif"
+		 width=16 height=14 border=0 alt="Make printable"></a>
+		&nbsp;
+		<a href="javascript:document.forms[0].submit();" 
+		<%=switchIcon("Goto")%>><img name="Goto" src="./images/icon_goto_grey.gif"
+		 width=18 height=15 alt="Goto the first week of the selected month" border=0></a>		
+		<select name="month">
+<%
+' this creates the form list of month names
+
+for mLoop = 1 to 12
+	response.write "<option value='" & mLoop & "'"
+	if mLoop = Month(Date) then response.write " selected"
+	response.write ">" & MonthName(mLoop,1) & VbCrLf
+next
+%>
+		</select>
+		<select name="year">
+<%
+' this creates the form list of 20 years
+
+for yLoop = Year(Date) - 10 to Year(Date) + 10
+	response.write "<option"
+	if yLoop = Year(Now) then response.write " selected"
+	response.write ">" & yLoop & VbCrLf
+next
+%>
+		</select>
+	</nobr>
+	</td>
+	</form>
+<tr>
+	<td bgcolor="#<%=arColor(6)%>" align="center" colspan=2>
+	
+<!-- body of calendar -->
+	
+	<table width="100%" border=0 cellspacing=1 cellpadding=0>
+	<tr>
+		<td rowspan=3></td>
+<%
+' generate the heading
+
+dayShow = dayFirst
+dim spanArray(1)
+m = 0
+for intCol = 1 to 7
+	if dayShow = Date then
+		strColor=arColor(8)
+	elseif col = 1 or col = 7 then
+		strColor=arColor(10)
+	else
+		strColor=arColor(9)
+	end if
+	strDays = strDays & "<td width=""14.3%"" bgcolor=""#" _
+		& strColor & """><table cellspacing=0 cellpadding=0 width=""100%""><tr>" _
+		& "<td align=""center"" bgcolor=""#000000"" width=""20%"">" _
+		& "<font face=""Verdana, Arial, Helvetica"" color=""#ffffff""><font size=2><b>" _
+		& Day(dayShow) & "</b></font><td align=""center""><font face=""Verdana, Arial, Helvetica"" size=1>" & WeekDayName(intCol,0) & "</td></table></td>"
+	spanArray(m) = spanArray(m) + 1
+	dayNext = DateAdd("d", 1, dayShow)
+	if Month(dayNext) <> Month(dayShow) then
+		m = 1
+	end if
+	dayShow = dayNext
+next
+%>
+	<tr>
+		<td bgcolor="#<%=arColor(2)%>" colspan=<%=spanArray(0)%> align="center">
+		<font face="Tahoma, Arial, Helvetica" size=2 color="#<%=arColor(6)%>">
+		<a href="webCal4_month.asp?date=<%=dayFirst%>" <%=showStatus("View all of " & MonthName(Month(dayFirst)))%>>
+		<b><%=MonthName(Month(dayFirst)) & " " & Year(dayFirst)%></b></a></font></td>
+<% if spanArray(0) < 7 then %>
+		<td bgcolor="#<%=arColor(2)%>" colspan=<%=spanArray(1)%> align="center">
+		<font face="Tahoma, Arial, Helvetica" size=2 color="#<%=arColor(6)%>">
+		<a href="webCal4_month.asp?date=<%=dayLast%>" <%=showStatus("View all of " & MonthName(Month(dayLast)))%>>
+		<b><%=MonthName(Month(dayLast)) & " " & Year(dayLast)%></b></a></font></td>
+<% end if %>	
+	
+	<tr><%=strDays%>
+
+<%
+
+dim arSpan(6)
+
+arSpan(0) = 1
+arSpan(1) = 1
+arSpan(2) = 1
+arSpan(3) = 1
+arSpan(4) = 1
+arSpan(5) = 1
+arSpan(6) = 1
+
+' the calendar allows time assignments to within 5 minutes
+' there are 288 five minute periods in a day
+
+for intTime = 0 to 95
+
+	response.write "<tr>" & VbCrLf
+
+	if (intTime Mod 4 = 0 OR intTime = 0) AND intTime <> 95 then
+		response.write "<td rowspan=4 align=""right"" bgcolor=""#" _
+			& arColor(1) & """><font face=""Tahoma, Arial, Helvetica"" size=1><nobr>"
+			
+		if intTime > 0 then
+			intHour = intTime/4
+		else
+			intHour = 0
+		end if
+
+		if intHour = 0 then
+			response.write "<b>midnight</b>"
+		elseif intHour < 12 then
+			response.write intHour & ":00 AM"
+		elseif intHour = 12 then
+			response.write "<b>noon</b>"
+		else
+			response.write intHour - 12 & ":00 PM"
+		end if
+	
+		if intHour < 8 OR intHour > 17 then
+			strColor = arColor(12)
+		else
+			strColor = arColor(2)
+		end if
+
+		response.write "</nobr></font></td>" & VbCrLf
+	end if
+	
+	for intDay = 0 to 6
+		if arSpan(intDay) = 1 then
+			response.write "<td bgcolor=""#"
+			
+			if arEvents(intDay,intTime,0) <> "" then
+				arSpan(intDay) = arEvents(intDay,intTime,1)
+			
+				select case arEvents(intDay,intTime,2)
+					case "black"
+						response.write "ffffff"
+					case "blue"
+						response.write "9999ff"
+					case "red"
+						response.write "ff0000"
+					case "purple"
+						response.write "ff00ff"
+					case "green"
+						response.write "99ff99"
+					case "orange"
+						response.write "ffcc00"
+				end select
+								
+				response.write """ rowspan=" & arSpan(intDay) & " align=""center"">" _
+					& "<font face=""Tahoma, Arial, Helvetica"" size=1>" _
+					& arEvents(intDay,intTime,0) & "</font>"
+			else
+				if intDay > 0 AND intDay < 6 then
+					response.write strColor
+				else
+					response.write arColor(12)
+				end if
+				response.write """ height=3>"
+
+'				if intTime Mod 4 = 0 then
+'				response.write "<a href=""webCal4_edit.asp"" " _
+'					& showStatus("add event to " & intHour & ":00") _
+'					& "><img src=""./images/tiny_plus.gif"" height=3 width=3 border=0></a>"
+'				end if
+				
+				response.write "</td>" & VbCrLf
+			end if
+		else
+			arSpan(intDay) = arSpan(intDay) - 1
+		end if
+	next
+next
+%>
+
+	</table>
+	</td>
+
+<!-- end calendar body -->
+
+<tr>
+	<td valign="top">
+	<font face="Verdana, Arial, Helvetica" size=1>
+	<a href="http://boise.uidaho.edu/jason/webCal.html" target="_top">
+	webCal 4.0</a>
+	</font>
+	</td>
+	
+	<td align="right">
+<!--#include file="webCal4_options.inc"-->
+	</td>
+<%
+db.Close
+set db = nothing
+%>
+</table>
+</body>
+</html>
